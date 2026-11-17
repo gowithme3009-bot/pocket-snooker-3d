@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="theme-color" content="#071b17"><title>Pocket Snooker 3D</title>
+<style>
+:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#071b17;color:#f4f4e9;font-family:system-ui,Arial;overflow:hidden}header{height:58px;display:flex;align-items:center;justify-content:space-between;padding:0 16px;background:#0b2821;border-bottom:1px solid #285448}header strong{letter-spacing:1.5px;font-size:14px}header span{font-size:11px;color:#9cc7b6}#game{position:absolute;inset:58px 0 154px}#hud{position:absolute;top:68px;left:12px;right:12px;display:flex;justify-content:space-between;pointer-events:none} .pill{background:#071b17dd;border:1px solid #356455;border-radius:12px;padding:8px 12px;font-size:12px}#panel{position:absolute;bottom:0;left:0;right:0;background:#0b2821;border-top:1px solid #285448;padding:12px 14px calc(12px + env(safe-area-inset-bottom));display:grid;grid-template-columns:1fr 1fr;gap:10px}button{border:0;border-radius:11px;padding:12px;background:#d6b56c;color:#17251d;font-weight:800;font-size:13px}button.secondary{background:#173d32;color:#eaf4e9;border:1px solid #477365}#power{width:100%;accent-color:#d6b56c}label{font-size:11px;color:#a9c9bc;display:block;margin-bottom:5px}.wide{grid-column:1/-1;display:flex;gap:8px}.wide button{flex:1}#hint{font-size:11px;color:#a9c9bc;text-align:center;grid-column:1/-1}canvas{display:block}
+</style></head>
+<body>
+<header><strong>POCKET SNOOKER <span>3D</span></strong><span>MODE ENTRAÎNEMENT · V1</span></header>
+<div id="game"></div>
+<div id="hud"><div class="pill">Score : <b id="score">0</b></div><div class="pill">Coups : <b id="shots">0</b></div></div>
+<section id="panel">
+<div><label for="power">PUISSANCE <b id="powerVal">45%</b></label><input id="power" type="range" min="5" max="100" value="45"></div>
+<div><label>VISÉE</label><div style="font-size:12px;padding:7px 0">Glissez sur la table pour orienter la queue.</div></div>
+<div class="wide"><button id="shoot">JOUER LE COUP</button><button class="secondary" id="reset">RECOMMENCER</button><button class="secondary" id="undo">ANNULER</button></div>
+<div id="hint">Touchez/glissez pour viser, puis choisissez la puissance et jouez.</div>
+</section>
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+<script>
+(()=>{'use strict';
+const root=document.getElementById('game'),hint=document.getElementById('hint');
+if(!window.THREE){hint.textContent='Connexion requise pour charger le moteur 3D. Rechargez la page.';return}
+const scene=new THREE.Scene();scene.background=new THREE.Color(0x071b17);
+const camera=new THREE.PerspectiveCamera(38,1,.1,100);camera.position.set(0,8.8,10.5);camera.lookAt(0,0,0);
+const renderer=new THREE.WebGLRenderer({antialias:true});renderer.setPixelRatio(Math.min(devicePixelRatio,2));root.appendChild(renderer.domElement);
+scene.add(new THREE.HemisphereLight(0xffffff,0x284337,2));const light=new THREE.DirectionalLight(0xffffff,2.2);light.position.set(-3,8,5);scene.add(light);
+const W=5.2,H=9.2,R=.115,limitX=W/2-R,limitZ=H/2-R;
+const mat=(c,rough=.65)=>new THREE.MeshStandardMaterial({color:c,roughness:rough});
+const wood=mat(0x70452b),felt=mat(0x08734b),rail=mat(0x174a35),black=mat(0x101513),white=mat(0xf4f0dc),red=mat(0xc9252b),yellow=mat(0xe9c735),green=mat(0x23964a),brown=mat(0x874b2b),blue=mat(0x2878d5),pink=mat(0xe889b5);
+const table=new THREE.Mesh(new THREE.BoxGeometry(W+.65,.32,H+.65),wood);table.position.y=-.22;scene.add(table);
+const bed=new THREE.Mesh(new THREE.BoxGeometry(W,.12,H),felt);bed.position.y=0;scene.add(bed);
+for(let s of [-1,1]){let a=new THREE.Mesh(new THREE.BoxGeometry(.28,.24,H+.25),rail);a.position.set(s*(W/2+.12),.08,0);scene.add(a);let b=new THREE.Mesh(new THREE.BoxGeometry(W+.25,.24,.28),rail);b.position.set(0,.08,s*(H/2+.12));scene.add(b)}
+const pockets=[];for(let x of [-W/2,W/2])for(let z of [-H/2,H/2])pockets.push(new THREE.Vector2(x,z));pockets.push(new THREE.Vector2(-W/2,0),new THREE.Vector2(W/2,0));
+for(const p of pockets){const hole=new THREE.Mesh(new THREE.CylinderGeometry(.24,.24,.025,24),black);hole.position.set(p.x,.067,p.y);scene.add(hole)}
+const ballGeo=new THREE.SphereGeometry(R,24,16);let balls=[],cue,aim=0,score=0,shots=0,history=[];
+function addBall(x,z,color,isCue=false){const mesh=new THREE.Mesh(ballGeo,mat(color,.22));mesh.position.set(x,R,z);scene.add(mesh);balls.push({mesh,x,z,vx:0,vz:0,isCue});if(isCue)cue=balls[balls.length-1]}
+function setup(){for(const b of balls)scene.remove(b.mesh);balls=[];score=0;shots=0;addBall(0,2.9,0xf4f0dc,true);const colors=[0xe9c735,0x23964a,0x874b2b,0x2878d5,0xe889b5,0x171717];const spots=[[-1.7,-2.9],[-1.05,-2.9],[-.4,-2.9],[.4,-2.9],[1.05,-2.9],[1.7,-2.9]];spots.forEach((p,i)=>addBall(p[0],p[1],colors[i]));for(let row=0;row<5;row++)for(let col=0;col<=row;col++)addBall((col-row/2)*R*2.12,-.15-row*R*1.9,0xc9252b);updateHud()}
+function updateHud(){document.getElementById('score').textContent=score;document.getElementById('shots').textContent=shots}
+function snapshot(){history.push(balls.map(b=>({x:b.x,z:b.z,vx:b.vx,vz:b.vz,isCue:b.isCue,color:b.mesh.material.color.getHex()})));if(history.length>20)history.shift()}
+function restore(){if(!history.length)return;let h=history.pop();for(const b of balls)scene.remove(b.mesh);balls=[];h.forEach(b=>addBall(b.x,b.z,b.color,b.isCue));balls.forEach((b,i)=>{b.vx=h[i].vx;b.vz=h[i].vz});updateHud()}
+function shoot(){if(balls.some(b=>Math.hypot(b.vx,b.vz)>.02))return;snapshot();const p=Number(document.getElementById('power').value)/100;cue.vx=Math.sin(aim)*p*.23;cue.vz=-Math.cos(aim)*p*.23;shots++;updateHud();hint.textContent='Coup joué !'}
+document.getElementById('shoot').onclick=shoot;document.getElementById('reset').onclick=()=>{history=[];setup();hint.textContent='Nouvelle partie prête.'};document.getElementById('undo').onclick=restore;
+const power=document.getElementById('power');power.oninput=()=>document.getElementById('powerVal').textContent=power.value+'%';
+let dragging=false,lastX=0;renderer.domElement.addEventListener('pointerdown',e=>{dragging=true;lastX=e.clientX;renderer.domElement.setPointerCapture(e.pointerId)});renderer.domElement.addEventListener('pointermove',e=>{if(dragging){aim+=(e.clientX-lastX)*.008;lastX=e.clientX}});renderer.domElement.addEventListener('pointerup',()=>dragging=false);
+function physics(dt){for(const b of balls){b.x+=b.vx*dt;b.z+=b.vz*dt;b.vx*=Math.pow(.986,dt*60);b.vz*=Math.pow(.986,dt*60);if(Math.hypot(b.vx,b.vz)<.004)b.vx=b.vz=0;
+if(Math.abs(b.x)>limitX){b.x=Math.sign(b.x)*limitX;b.vx*=-.82}if(Math.abs(b.z)>limitZ){b.z=Math.sign(b.z)*limitZ;b.vz*=-.82}}
+for(let i=0;i<balls.length;i++)for(let j=i+1;j<balls.length;j++){let a=balls[i],b=balls[j],dx=b.x-a.x,dz=b.z-a.z,d=Math.hypot(dx,dz);if(d>0&&d<R*2){let nx=dx/d,nz=dz/d,over=R*2-d;a.x-=nx*over/2;a.z-=nz*over/2;b.x+=nx*over/2;b.z+=nz*over/2;let rel=(a.vx-b.vx)*nx+(a.vz-b.vz)*nz;if(rel>0){a.vx-=rel*nx;a.vz-=rel*nz;b.vx+=rel*nx;b.vz+=rel*nz}}}
+for(let i=balls.length-1;i>=0;i--){let b=balls[i];if(pockets.some(p=>Math.hypot(b.x-p.x,b.z-p.y)<.26)){if(!b.isCue){score+=10;scene.remove(b.mesh);balls.splice(i,1)}else{b.x=0;b.z=2.9;b.vx=b.vz=0}}b.mesh.position.set(b.x,R,b.z)}updateHud()}
+function resize(){const w=root.clientWidth,h=root.clientHeight;camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h)}window.addEventListener('resize',resize);resize();setup();
+let prev=performance.now();function loop(t){requestAnimationFrame(loop);let dt=Math.min((t-prev)/16.67,2);prev=t;physics(dt);renderer.render(scene,camera)}requestAnimationFrame(loop);
+})();
+</script></body></html>
